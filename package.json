@@ -1,0 +1,58 @@
+{
+  "name": "claude-bridge-mcp",
+  "version": "1.1.0",
+  "description": "Use your Claude Code MAX/PRO subscription from any MCP client. Exposes Claude CLI over HTTP+SSE.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "claude-bridge-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "keywords": [
+    "mcp",
+    "claude",
+    "claude-code",
+    "bridge",
+    "openclaw",
+    "anthropic",
+    "ai-agent",
+    "remote",
+    "sse",
+    "model-context-protocol"
+  ],
+  "author": "ICM Motion <hello@gicm.app>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0motionguy/claude-bridge-mcp.git"
+  },
+  "homepage": "https://gicm.app/tools/claude-bridge",
+  "bugs": {
+    "url": "https://github.com/0motionguy/claude-bridge-mcp/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "express": "^4.21.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.0",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}
