@@ -10,6 +10,10 @@ export interface ExecutionResult {
   durationMs: number;
 }
 
+const MAX_PROMPT_LENGTH = 100_000;
+const MAX_OUTPUT = 1_000_000;
+const MAX_QUEUE_DEPTH = 50;
+
 let activeExecutions = 0;
 const waitQueue: Array<{ resolve: () => void; reject: (err: Error) => void }> =
   [];
@@ -40,15 +44,15 @@ async function acquireSlot(): Promise<void> {
     return;
   }
 
+  if (waitQueue.length >= MAX_QUEUE_DEPTH) {
+    throw new Error("Server overloaded");
+  }
+
   return new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       const idx = waitQueue.findIndex((w) => w.resolve === resolve);
       if (idx !== -1) waitQueue.splice(idx, 1);
-      reject(
-        new Error(
-          `Queue timeout after ${config.queueTimeout}ms (depth: ${waitQueue.length})`,
-        ),
-      );
+      reject(new Error("Queue timeout"));
     }, config.queueTimeout);
 
     waitQueue.push({
@@ -70,6 +74,16 @@ export async function executeClaudeCLI(
     printOnly?: boolean;
   } = {},
 ): Promise<ExecutionResult> {
+  if (prompt.length > MAX_PROMPT_LENGTH) {
+    return {
+      success: false,
+      output: "",
+      error: `Prompt too large (max ${MAX_PROMPT_LENGTH} chars)`,
+      exitCode: null,
+      durationMs: 0,
+    };
+  }
+
   try {
     await acquireSlot();
   } catch (err) {
@@ -88,7 +102,7 @@ export async function executeClaudeCLI(
     return {
       success: false,
       output: "",
-      error: `Directory not allowed: ${cwd}`,
+      error: "Directory not allowed",
       exitCode: null,
       durationMs: 0,
     };
@@ -106,7 +120,6 @@ export async function executeClaudeCLI(
   return new Promise<ExecutionResult>((resolve) => {
     const proc = spawn("claude", args, {
       cwd,
-      shell: true,
       env: { ...process.env },
     });
 
@@ -114,11 +127,11 @@ export async function executeClaudeCLI(
     let stderr = "";
 
     proc.stdout.on("data", (data: Buffer) => {
-      stdout += data.toString();
+      if (stdout.length < MAX_OUTPUT) stdout += data.toString();
     });
 
     proc.stderr.on("data", (data: Buffer) => {
-      stderr += data.toString();
+      if (stderr.length < MAX_OUTPUT) stderr += data.toString();
     });
 
     const timer = setTimeout(() => {

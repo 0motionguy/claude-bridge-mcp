@@ -17,9 +17,13 @@ Your PC (Claude MAX/PRO)              Remote Machine
 Your $100/mo MAX or $200/mo PRO → accessible from any machine
 ```
 
-## Quick Start
+## Requirements
 
-**Prerequisites:** [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated on your machine.
+- **Node.js** 18+
+- **Claude Code CLI** installed and authenticated (`claude` command in PATH) — [install guide](https://docs.anthropic.com/en/docs/claude-code)
+- An active **Claude Code MAX** ($100/mo) or **PRO** ($200/mo) subscription
+
+## Quick Start
 
 ```bash
 # Run directly (no install needed)
@@ -87,16 +91,16 @@ All configuration is via environment variables. Copy `.env.example` to `.env`:
 cp .env.example .env
 ```
 
-| Variable                | Default         | Description                                                                                                                     |
-| ----------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `BRIDGE_HOST`           | `0.0.0.0`       | Bind address                                                                                                                    |
-| `BRIDGE_PORT`           | `3100`          | Server port                                                                                                                     |
-| `BRIDGE_API_TOKEN`      | _(none)_        | Bearer token for authentication. If set, all requests (except `/health` and `/metrics`) require `Authorization: Bearer <token>` |
-| `BRIDGE_ALLOWED_IPS`    | _(empty = all)_ | Comma-separated IP allowlist. Empty means all IPs allowed. Localhost is always allowed.                                         |
-| `BRIDGE_ALLOWED_DIRS`   | _(empty = cwd)_ | Comma-separated directory allowlist. Empty defaults to the current working directory.                                           |
-| `BRIDGE_TIMEOUT`        | `120000`        | Execution timeout in ms                                                                                                         |
-| `BRIDGE_MAX_CONCURRENT` | `2`             | Max concurrent Claude CLI executions                                                                                            |
-| `BRIDGE_QUEUE_TIMEOUT`  | `30000`         | Queue wait timeout in ms                                                                                                        |
+| Variable                | Default         | Description                                                                                                      |
+| ----------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `BRIDGE_HOST`           | `0.0.0.0`       | Bind address                                                                                                     |
+| `BRIDGE_PORT`           | `3100`          | Server port                                                                                                      |
+| `BRIDGE_API_TOKEN`      | _(none)_        | Bearer token for authentication. If set, all requests (except `/health`) require `Authorization: Bearer <token>` |
+| `BRIDGE_ALLOWED_IPS`    | _(empty = all)_ | Comma-separated IP allowlist. Empty means all IPs allowed. Localhost is always allowed.                          |
+| `BRIDGE_ALLOWED_DIRS`   | _(empty = cwd)_ | Comma-separated directory allowlist. Empty defaults to the current working directory.                            |
+| `BRIDGE_TIMEOUT`        | `120000`        | Execution timeout in ms                                                                                          |
+| `BRIDGE_MAX_CONCURRENT` | `2`             | Max concurrent Claude CLI executions                                                                             |
+| `BRIDGE_QUEUE_TIMEOUT`  | `30000`         | Queue wait timeout in ms                                                                                         |
 
 ## Security
 
@@ -119,12 +123,12 @@ BRIDGE_ALLOWED_DIRS=/path/to/project1,/path/to/project2
 
 ## Endpoints
 
-| Endpoint    | Method | Description                       |
-| ----------- | ------ | --------------------------------- |
-| `/sse`      | GET    | SSE connection for MCP clients    |
-| `/messages` | POST   | JSON-RPC message endpoint         |
-| `/health`   | GET    | Health check (no auth required)   |
-| `/metrics`  | GET    | Server metrics (no auth required) |
+| Endpoint    | Method | Description                     |
+| ----------- | ------ | ------------------------------- |
+| `/sse`      | GET    | SSE connection for MCP clients  |
+| `/messages` | POST   | JSON-RPC message endpoint       |
+| `/health`   | GET    | Health check (no auth required) |
+| `/metrics`  | GET    | Server metrics                  |
 
 ## How It Works
 
@@ -151,12 +155,6 @@ Runs anywhere Claude Code CLI and Node.js are available:
 | **WSL2**                                | Full support                         |
 
 **Same-machine use:** The bridge also works locally — useful for apps that only speak MCP but need Claude Code capabilities. Just connect to `http://localhost:3100/sse`.
-
-## Requirements
-
-- **Node.js** 18+
-- **Claude Code CLI** installed and authenticated (`claude` command available in PATH)
-- An active **Claude Code MAX** ($100/mo) or **PRO** ($200/mo) subscription
 
 ## Development
 

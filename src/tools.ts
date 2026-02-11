@@ -147,7 +147,7 @@ export async function handleTool(
       case "claude_read_file": {
         const filePath = args.filePath as string;
         if (!(await isRealPathAllowed(filePath))) {
-          throw new Error(`Path not allowed: ${filePath}`);
+          throw new Error("Path not allowed");
         }
         const encoding = (args.encoding as BufferEncoding) ?? "utf-8";
         const content = await readFile(filePath, { encoding });
@@ -158,19 +158,22 @@ export async function handleTool(
       case "claude_git_status": {
         const repoPath = args.repoPath as string;
         if (!(await isRealPathAllowed(repoPath))) {
-          throw new Error(`Path not allowed: ${repoPath}`);
+          throw new Error("Path not allowed");
         }
         const status = execSync("git status --porcelain", {
           cwd: repoPath,
           encoding: "utf-8",
+          timeout: 10_000,
         });
         const branch = execSync("git branch --show-current", {
           cwd: repoPath,
           encoding: "utf-8",
+          timeout: 10_000,
         }).trim();
         const log = execSync('git log --oneline -5 --format="%h %s"', {
           cwd: repoPath,
           encoding: "utf-8",
+          timeout: 10_000,
         });
         result = {
           branch,

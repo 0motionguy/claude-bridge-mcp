@@ -3,7 +3,6 @@
   "version": "1.1.0",
   "description": "Use your Claude Code MAX/PRO subscription from any MCP client. Exposes Claude CLI over HTTP+SSE.",
   "type": "module",
-  "main": "./dist/index.js",
   "bin": {
     "claude-bridge-mcp": "./dist/index.js"
   },

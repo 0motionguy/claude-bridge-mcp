@@ -12,6 +12,7 @@
  *   npx mcp-remote http://<this-machine-ip>:3100/sse
  */
 
+import crypto from "node:crypto";
 import { execSync } from "node:child_process";
 import express from "express";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -34,10 +35,14 @@ try {
 }
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "200kb" }));
 
 // Track active SSE transports by session ID
 const transports = new Map<string, SSEServerTransport>();
+
+// SSE connection limit per IP
+const MAX_SSE_PER_IP = 5;
+const ssePerIP = new Map<string, number>();
 
 // Metrics
 const metrics = {
@@ -60,15 +65,26 @@ function logRequest(
   console.log(`[${ts}] ${method} ${path} ${status} ${ip}${dur}`);
 }
 
+// Timing-safe string comparison
+function timingSafeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 // Bearer token auth middleware (if BRIDGE_API_TOKEN is set)
 app.use((req, res, next) => {
   metrics.totalRequests++;
 
   if (!config.apiToken) return next();
-  if (req.path === "/health" || req.path === "/metrics") return next();
+  if (req.path === "/health") return next();
 
   const auth = req.headers.authorization;
-  if (!auth || auth !== `Bearer ${config.apiToken}`) {
+  if (!auth || !timingSafeCompare(auth, `Bearer ${config.apiToken}`)) {
     logRequest(req.ip ?? "unknown", req.method, req.path, 401);
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -103,8 +119,6 @@ app.get("/health", (_req, res) => {
     status: "ok",
     server: "claude-bridge-mcp",
     version: "1.1.0",
-    tools: toolDefinitions.map((t) => t.name),
-    activeSessions: transports.size,
   });
 });
 
@@ -121,7 +135,16 @@ app.get("/metrics", (_req, res) => {
 
 // SSE endpoint — client connects here
 app.get("/sse", async (req, res) => {
-  logRequest(req.ip ?? "unknown", "GET", "/sse", 200);
+  const clientIP = req.ip?.replace("::ffff:", "") ?? "unknown";
+  const count = ssePerIP.get(clientIP) ?? 0;
+
+  if (count >= MAX_SSE_PER_IP) {
+    logRequest(clientIP, "GET", "/sse", 429);
+    return res.status(429).json({ error: "Too many connections" });
+  }
+
+  ssePerIP.set(clientIP, count + 1);
+  logRequest(clientIP, "GET", "/sse", 200);
 
   const mcpServer = new Server(
     { name: "claude-bridge", version: "1.1.0" },
@@ -136,29 +159,17 @@ app.get("/sse", async (req, res) => {
     const { name, arguments: args } = request.params;
     const start = Date.now();
     metrics.totalToolCalls++;
-    logRequest(req.ip ?? "unknown", "TOOL", name, 200);
+    logRequest(clientIP, "TOOL", name, 200);
     try {
       const result = await handleTool(
         name,
         (args ?? {}) as Record<string, unknown>,
       );
-      logRequest(
-        req.ip ?? "unknown",
-        "TOOL_DONE",
-        name,
-        200,
-        Date.now() - start,
-      );
+      logRequest(clientIP, "TOOL_DONE", name, 200, Date.now() - start);
       return result;
     } catch (err) {
       metrics.errors++;
-      logRequest(
-        req.ip ?? "unknown",
-        "TOOL_ERR",
-        name,
-        500,
-        Date.now() - start,
-      );
+      logRequest(clientIP, "TOOL_ERR", name, 500, Date.now() - start);
       throw err;
     }
   });
@@ -169,6 +180,7 @@ app.get("/sse", async (req, res) => {
   transport.onclose = () => {
     console.log(`SSE session ${transport.sessionId} closed`);
     transports.delete(transport.sessionId);
+    ssePerIP.set(clientIP, (ssePerIP.get(clientIP) ?? 1) - 1);
   };
 
   await mcpServer.connect(transport);
@@ -190,16 +202,16 @@ app.post("/messages", async (req, res) => {
 app.listen(config.port, config.host, () => {
   const authStatus = config.apiToken ? "Bearer token" : "None (IP only)";
   console.log(`
-\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557
-\u2551       Claude Bridge MCP Server v1.1.0        \u2551
-\u2560\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2563
-\u2551  SSE:     http://${config.host}:${config.port}/sse
-\u2551  Health:  http://${config.host}:${config.port}/health
-\u2551  Metrics: http://${config.host}:${config.port}/metrics
-\u2551  Tools:   ${toolDefinitions.length} available
-\u2551  Auth:    ${authStatus}
-\u2551  IPs:     ${config.allowedIPs.length > 0 ? config.allowedIPs.join(", ") : "all (no allowlist)"}
-\u2551  Dirs:    ${config.allowedDirectories.join(", ")}
-\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d
+╔══════════════════════════════════════════════╗
+║       Claude Bridge MCP Server v1.1.0        ║
+╠══════════════════════════════════════════════╣
+║  SSE:     http://${config.host}:${config.port}/sse
+║  Health:  http://${config.host}:${config.port}/health
+║  Metrics: http://${config.host}:${config.port}/metrics
+║  Tools:   ${toolDefinitions.length} available
+║  Auth:    ${authStatus}
+║  IPs:     ${config.allowedIPs.length > 0 ? config.allowedIPs.join(", ") : "all (no allowlist)"}
+║  Dirs:    ${config.allowedDirectories.join(", ")}
+╚══════════════════════════════════════════════╝
 `);
 });
