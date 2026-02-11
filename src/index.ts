@@ -12,6 +12,7 @@
  *   npx mcp-remote http://<this-machine-ip>:3100/sse
  */
 
+import { execSync } from "node:child_process";
 import express from "express";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -22,6 +23,15 @@ import {
 
 import { toolDefinitions, handleTool } from "./tools.js";
 import { config } from "./config.js";
+
+// Verify Claude CLI is available at startup
+try {
+  execSync("claude --version", { stdio: "ignore", timeout: 5000 });
+} catch {
+  console.error("ERROR: 'claude' CLI not found in PATH.");
+  console.error("Install: https://docs.anthropic.com/en/docs/claude-code");
+  process.exit(1);
+}
 
 const app = express();
 app.use(express.json());

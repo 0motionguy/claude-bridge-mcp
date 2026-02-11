@@ -1,4 +1,5 @@
 import { readFile, realpath } from "node:fs/promises";
+import { resolve, sep } from "node:path";
 import { execSync } from "node:child_process";
 import { executeClaudeCLI } from "./executor.js";
 import { config } from "./config.js";
@@ -94,10 +95,17 @@ export const toolDefinitions: ToolDefinition[] = [
 ];
 
 function isPathAllowed(filePath: string): boolean {
-  const normalized = filePath.replace(/\//g, "\\").toLowerCase();
-  return config.allowedDirectories.some((allowed) =>
-    normalized.startsWith(allowed.toLowerCase()),
-  );
+  const normalized = resolve(filePath);
+  return config.allowedDirectories.some((allowed) => {
+    const allowedResolved = resolve(allowed);
+    if (process.platform === "win32") {
+      return normalized.toLowerCase().startsWith(allowedResolved.toLowerCase());
+    }
+    return (
+      normalized === allowedResolved ||
+      normalized.startsWith(allowedResolved + sep)
+    );
+  });
 }
 
 async function isRealPathAllowed(filePath: string): Promise<boolean> {

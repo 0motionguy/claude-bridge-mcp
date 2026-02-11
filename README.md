@@ -135,6 +135,23 @@ BRIDGE_ALLOWED_DIRS=/path/to/project1,/path/to/project2
 
 The bridge uses the [Model Context Protocol](https://modelcontextprotocol.io/) — the open standard for AI tool communication.
 
+## Supported Platforms
+
+Runs anywhere Claude Code CLI and Node.js are available:
+
+| Platform                                | Notes                                |
+| --------------------------------------- | ------------------------------------ |
+| **Windows** 10/11                       | Full support                         |
+| **macOS** (Intel & Apple Silicon)       | Full support                         |
+| **Linux** (Ubuntu, Debian, etc.)        | Full support                         |
+| **Linux VPS** (AWS, DigitalOcean, etc.) | Run the bridge on any cloud VM       |
+| **Docker**                              | `node:18-alpine` or similar          |
+| **Mac Mini** (headless server)          | Great as an always-on bridge         |
+| **Termux** (Android)                    | Set `BRIDGE_ALLOWED_DIRS` explicitly |
+| **WSL2**                                | Full support                         |
+
+**Same-machine use:** The bridge also works locally — useful for apps that only speak MCP but need Claude Code capabilities. Just connect to `http://localhost:3100/sse`.
+
 ## Requirements
 
 - **Node.js** 18+

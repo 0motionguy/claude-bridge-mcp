@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { resolve, sep } from "node:path";
 import { config } from "./config.js";
 
 export interface ExecutionResult {
@@ -14,10 +15,17 @@ const waitQueue: Array<{ resolve: () => void; reject: (err: Error) => void }> =
   [];
 
 function isPathAllowed(dir: string): boolean {
-  const normalized = dir.replace(/\//g, "\\").toLowerCase();
-  return config.allowedDirectories.some((allowed) =>
-    normalized.startsWith(allowed.toLowerCase()),
-  );
+  const normalized = resolve(dir);
+  return config.allowedDirectories.some((allowed) => {
+    const allowedResolved = resolve(allowed);
+    if (process.platform === "win32") {
+      return normalized.toLowerCase().startsWith(allowedResolved.toLowerCase());
+    }
+    return (
+      normalized === allowedResolved ||
+      normalized.startsWith(allowedResolved + sep)
+    );
+  });
 }
 
 function releaseSlot() {
