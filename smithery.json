@@ -1,0 +1,33 @@
+{
+  "name": "Claude Bridge MCP",
+  "description": "Use your Claude Code MAX/PRO subscription from any MCP client. Exposes Claude CLI as tools over HTTP+SSE \u2014 run code, read/write files, execute tasks with full Claude Code capabilities.",
+  "version": "1.2.0",
+  "homepage": "https://github.com/0motionguy/claude-bridge-mcp",
+  "categories": [
+    "coding",
+    "ai",
+    "automation"
+  ],
+  "tags": [
+    "claude",
+    "claude-code",
+    "mcp",
+    "coding-agent",
+    "automation"
+  ],
+  "transport": "stdio",
+  "startCommand": {
+    "type": "npx",
+    "command": "claude-bridge-mcp"
+  },
+  "tools": [
+    {
+      "name": "claude_execute",
+      "description": "Execute a coding task using Claude Code. Full file read/write, terminal commands, git ops."
+    },
+    {
+      "name": "claude_query",
+      "description": "Ask Claude Code a question. Read-only, fast code analysis and explanations."
+    }
+  ]
+}
