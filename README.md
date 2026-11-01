@@ -1,175 +1,71 @@
 # claude-bridge-mcp
 
-**Use your Claude Code MAX/PRO subscription from anywhere.**
+Reach the Claude Code CLI on one machine from MCP clients on another.
 
-An MCP server that exposes your local Claude Code CLI over HTTP+SSE, so any MCP-compatible client — [OpenClaw](https://openclaw.dev), Claude Desktop, or your own agents — can use your Claude Code subscription remotely.
+claude-bridge-mcp is a small MCP server that runs next to an authenticated `claude` CLI and exposes it over HTTP with server-sent events (SSE). A remote MCP client connects to `/sse`, calls a tool, and the bridge spawns `claude` locally and returns the JSON result. It is for a developer who wants their own agents or MCP clients on other machines (a laptop, a VPS, a home server) to reach the Claude Code install on their main machine over a private network.
+
+The bridge drives the official CLI under your own login. What a Claude plan allows is set by Anthropic's terms, so check them before you give other people or services access to a bridge.
+
+## What it does
+
+- **`claude_execute`** runs a prompt through `claude --print --output-format json` in an allowed working directory. Default timeout 120 s, overridable per call.
+- **`claude_query`** is the same call with a 60 s limit and `--verbose`, meant for questions. Read-only is not enforced by the bridge; what the CLI may do is decided by your local Claude Code permission settings.
+- **`claude_read_file`** reads a text file inside the directory allowlist. Paths go through `realpath` first, so a symlink cannot point outside the allowlist.
+- **`claude_git_status`** returns the branch, `git status --porcelain` and the last five commits of a repository inside the allowlist.
+- **Access control:** optional bearer token (constant-time compare), IP allowlist (localhost always passes), directory allowlist, and at most 5 SSE connections per IP.
+- **Load control:** FIFO queue with configurable concurrency (default 2), queue depth capped at 50, queue timeout, a 100,000-character prompt limit, and output capture that stops at about 1 MB per stream.
+- **Observability:** one log line per request and tool call, `GET /health` (no auth) and `GET /metrics`.
+
+## How it's built
 
 ```
-Your PC (Claude MAX/PRO)              Remote Machine
-┌──────────────────────┐              ┌──────────────────┐
-│  claude-bridge-mcp   │◄────────────►│  OpenClaw Agent  │
-│  :3100/sse           │   HTTP+SSE   │  Claude Desktop  │
-│                      │   (Tailscale │  Custom MCP app  │
-│  Spawns Claude CLI ──┤    or VPN)   └──────────────────┘
-│  Uses YOUR sub  ─────┤
-└──────────────────────┘
-
-Your $100/mo MAX or $200/mo PRO → accessible from any machine
+MCP client --GET /sse, POST /messages--> Express 4 + MCP SDK (SSE transport)
+                                              |
+                                              +-- tools.ts --> executor.ts --spawn--> claude CLI (local login)
 ```
 
-## Requirements
+TypeScript (ES modules), Express 4, `@modelcontextprotocol/sdk` and zod for config. Four source files, about 630 lines. There is no test suite in the repo.
 
-- **Node.js** 18+
-- **Claude Code CLI** installed and authenticated (`claude` command in PATH) — [install guide](https://docs.anthropic.com/en/docs/claude-code)
-- An active **Claude Code MAX** ($100/mo) or **PRO** ($200/mo) subscription
+## Repository layout
 
-## Quick Start
+- `src/index.ts`: HTTP server, auth and IP middleware, SSE and message routes, health and metrics.
+- `src/tools.ts`: the four tool definitions and handlers.
+- `src/executor.ts`: CLI spawn, queue, timeouts, working-directory check.
+- `src/config.ts`: environment parsing and defaults.
+- `smithery.json`: marketplace listing.
+- `.env.example`: configuration template.
 
-```bash
-# Run directly (no install needed)
-npx claude-bridge-mcp
+## Run it locally
 
-# Or install globally
-npm install -g claude-bridge-mcp
-claude-bridge-mcp
-```
-
-The server starts on `http://0.0.0.0:3100`. Verify:
-
-```bash
-curl http://localhost:3100/health
-```
-
-## Connect from OpenClaw
-
-Add the bridge as an MCP server in your `~/.openclaw/openclaw.json`:
-
-```json
-{
-  "mcpServers": {
-    "claude-bridge": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "http://<your-pc-ip>:3100/sse"]
-    }
-  }
-}
-```
-
-Replace `<your-pc-ip>` with your PC's IP address. If using [Tailscale](https://tailscale.com), use your Tailscale IP (`tailscale ip -4`).
-
-Now your OpenClaw agent can use `claude_execute`, `claude_query`, `claude_read_file`, and `claude_git_status` — all powered by your Claude Code subscription.
-
-## Connect from Claude Desktop
-
-Add to your Claude Desktop MCP config (`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "claude-bridge": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "http://<your-pc-ip>:3100/sse"]
-    }
-  }
-}
-```
-
-## Available Tools
-
-| Tool                | Description                                                                                                 |
-| ------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `claude_execute`    | Execute a task using Claude Code. Full coding capabilities: read/write files, run commands, git operations. |
-| `claude_query`      | Ask Claude Code a question (read-only, fast). Great for code analysis and explanations.                     |
-| `claude_read_file`  | Read a file from the PC filesystem.                                                                         |
-| `claude_git_status` | Get git status: branch, changes, and recent commits.                                                        |
-
-## Configuration
-
-All configuration is via environment variables. Copy `.env.example` to `.env`:
-
-```bash
-cp .env.example .env
-```
-
-| Variable                | Default         | Description                                                                                                      |
-| ----------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `BRIDGE_HOST`           | `0.0.0.0`       | Bind address                                                                                                     |
-| `BRIDGE_PORT`           | `3100`          | Server port                                                                                                      |
-| `BRIDGE_API_TOKEN`      | _(none)_        | Bearer token for authentication. If set, all requests (except `/health`) require `Authorization: Bearer <token>` |
-| `BRIDGE_ALLOWED_IPS`    | _(empty = all)_ | Comma-separated IP allowlist. Empty means all IPs allowed. Localhost is always allowed.                          |
-| `BRIDGE_ALLOWED_DIRS`   | _(empty = cwd)_ | Comma-separated directory allowlist. Empty defaults to the current working directory.                            |
-| `BRIDGE_TIMEOUT`        | `120000`        | Execution timeout in ms                                                                                          |
-| `BRIDGE_MAX_CONCURRENT` | `2`             | Max concurrent Claude CLI executions                                                                             |
-| `BRIDGE_QUEUE_TIMEOUT`  | `30000`         | Queue wait timeout in ms                                                                                         |
-
-## Security
-
-The bridge includes multiple security layers:
-
-- **IP Allowlist** — Restrict access to specific IPs (e.g., your Tailscale network). Localhost always allowed.
-- **Bearer Token Auth** — Set `BRIDGE_API_TOKEN` for token-based authentication.
-- **Directory Allowlist** — Claude CLI can only access directories you explicitly allow.
-- **Symlink Protection** — Paths are resolved via `realpath()` before checking the allowlist, preventing symlink traversal.
-- **Execution Queue** — FIFO queue with configurable concurrency limits and timeout to prevent resource exhaustion.
-
-**Recommended setup for remote access:**
-
-```bash
-# Use Tailscale for encrypted networking
-BRIDGE_ALLOWED_IPS=100.x.y.z    # Your remote machine's Tailscale IP
-BRIDGE_API_TOKEN=your-secret     # Additional auth layer
-BRIDGE_ALLOWED_DIRS=/path/to/project1,/path/to/project2
-```
-
-## Endpoints
-
-| Endpoint    | Method | Description                     |
-| ----------- | ------ | ------------------------------- |
-| `/sse`      | GET    | SSE connection for MCP clients  |
-| `/messages` | POST   | JSON-RPC message endpoint       |
-| `/health`   | GET    | Health check (no auth required) |
-| `/metrics`  | GET    | Server metrics                  |
-
-## How It Works
-
-1. Remote MCP client connects to `/sse` (Server-Sent Events)
-2. Client sends tool calls via `/messages` (JSON-RPC over HTTP)
-3. Bridge spawns `claude` CLI locally with your authenticated session
-4. Results stream back over SSE
-
-The bridge uses the [Model Context Protocol](https://modelcontextprotocol.io/) — the open standard for AI tool communication.
-
-## Supported Platforms
-
-Runs anywhere Claude Code CLI and Node.js are available:
-
-| Platform                                | Notes                                |
-| --------------------------------------- | ------------------------------------ |
-| **Windows** 10/11                       | Full support                         |
-| **macOS** (Intel & Apple Silicon)       | Full support                         |
-| **Linux** (Ubuntu, Debian, etc.)        | Full support                         |
-| **Linux VPS** (AWS, DigitalOcean, etc.) | Run the bridge on any cloud VM       |
-| **Docker**                              | `node:18-alpine` or similar          |
-| **Mac Mini** (headless server)          | Great as an always-on bridge         |
-| **Termux** (Android)                    | Set `BRIDGE_ALLOWED_DIRS` explicitly |
-| **WSL2**                                | Full support                         |
-
-**Same-machine use:** The bridge also works locally — useful for apps that only speak MCP but need Claude Code capabilities. Just connect to `http://localhost:3100/sse`.
-
-## Development
+Needs Node 18+ and the `claude` CLI on `PATH`, already logged in.
 
 ```bash
 git clone https://github.com/0motionguy/claude-bridge-mcp.git
 cd claude-bridge-mcp
 npm install
-npm run dev    # Hot-reload development server
-npm run build  # Production build
+npm run build && npm start        # or `npm run dev` for watch mode
+curl http://localhost:3100/health
 ```
 
-## License
+Point an MCP client at it with `npx -y mcp-remote http://<host>:3100/sse`.
 
-MIT - see [LICENSE](LICENSE)
+The server reads plain environment variables and does not load `.env` itself. Export them, or on Node 20.6+ start it with `node --env-file=.env dist/index.js`.
 
----
+| Variable | Default | Meaning |
+|---|---|---|
+| `BRIDGE_HOST` | `0.0.0.0` | Bind address |
+| `BRIDGE_PORT` | `3100` | Port |
+| `BRIDGE_API_TOKEN` | unset | If set, every route except `/health` needs `Authorization: Bearer <token>` |
+| `BRIDGE_ALLOWED_IPS` | empty (all) | Comma-separated client IPs; localhost is always allowed |
+| `BRIDGE_ALLOWED_DIRS` | empty (cwd) | Comma-separated directories the tools may use |
+| `BRIDGE_TIMEOUT` | `120000` | Execution timeout in ms |
+| `BRIDGE_MAX_CONCURRENT` | `2` | Parallel `claude` runs |
+| `BRIDGE_QUEUE_TIMEOUT` | `30000` | Max wait in the queue in ms |
 
-Built by [ICM Motion](https://gicm.app) for the [OpenClaw](https://openclaw.dev) community.
+The defaults are open: the server binds all interfaces and the token is optional. Before exposing it beyond localhost, set `BRIDGE_API_TOKEN` and `BRIDGE_ALLOWED_IPS` and bind to a private interface. The directory allowlist covers the working directory and the two file tools; it does not sandbox the spawned CLI.
+
+## Status
+
+Beta. A single-purpose tool at version 1.1.0 with five commits, last push 2026-02-17. It is not released from this repository to npm: the `claude-bridge-mcp` name on the npm registry belongs to an unrelated project, so install from a clone.
+
+Licence: MIT, see `LICENSE`.
